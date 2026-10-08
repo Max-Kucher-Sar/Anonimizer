@@ -1,0 +1,45 @@
+# Python environments and caches
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg-info/
+build/
+dist/
+
+# Local configuration and secrets; keep the configuration template
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local documents, anonymization reports and generated results
+/example*.docx
+*.report.json
+/results/
+/uploads/
+/outputs/
+*.log
+
+# Downloaded model weights
+/.ollama/
+/models/
+*.gguf
+*.safetensors
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+~$*

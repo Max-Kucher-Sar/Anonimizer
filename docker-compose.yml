@@ -1,0 +1,120 @@
+name: anonymizer
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.0}
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Ollama has no published port; API uses the private Compose network.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  model-init:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.0}
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_NO_CLOUD: "1"
+      ANON_OLLAMA_MODEL: ${ANON_OLLAMA_MODEL:-qwen2.5:7b}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$ANON_OLLAMA_MODEL" in
+          *cloud*) echo "Cloud models are not allowed" >&2; exit 1 ;;
+        esac
+        if ollama show "$$ANON_OLLAMA_MODEL" >/dev/null 2>&1; then
+          echo "Model already present: $$ANON_OLLAMA_MODEL"
+        else
+          ollama pull "$$ANON_OLLAMA_MODEL"
+        fi
+
+  api:
+    image: anonymizer-api:local
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      ANON_SPACY_MODEL: ru_core_news_sm
+      ANON_OLLAMA_ENABLED: "true"
+      ANON_OLLAMA_URL: http://ollama:11434
+      ANON_OLLAMA_ALLOW_CONTAINER_HOST: "true"
+      ANON_OLLAMA_MODEL: ${ANON_OLLAMA_MODEL:-qwen2.5:7b}
+      ANON_OLLAMA_TIMEOUT_SECONDS: ${ANON_OLLAMA_TIMEOUT_SECONDS:-600}
+      ANON_OLLAMA_CHUNK_CHARS: ${ANON_OLLAMA_CHUNK_CHARS:-2400}
+      ANON_MAX_FILE_BYTES: ${ANON_MAX_FILE_BYTES:-20971520}
+      ANON_MAX_OFFICE_SEGMENTS: ${ANON_MAX_OFFICE_SEGMENTS:-20000}
+      ANON_MAX_TEXT_CHARS: ${ANON_MAX_TEXT_CHARS:-2000000}
+      ANON_API_WORKERS: ${ANON_API_WORKERS:-1}
+      ANON_API_KEY: ${ANON_API_KEY:-}
+      ANON_ENV: ${ANON_ENV:-development}
+    ports:
+      - "127.0.0.1:${ANON_PORT:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${ANON_API_WORKERS:-1}"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  tests:
+    profiles: ["test"]
+    image: anonymizer-tests:local
+    build:
+      context: .
+      target: test
+    environment:
+      ANON_OLLAMA_ENABLED: "false"
+      ANON_API_KEY: ""
+      ANON_ENV: development
+    command: ["pytest", "-q"]
+
+  caddy:
+    profiles: ["tls"]
+    image: anonymizer-caddy:local
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      ANON_DOMAIN: ${ANON_DOMAIN:-localhost}
+      ANON_RATE_LIMIT_REQUESTS: ${ANON_RATE_LIMIT_REQUESTS:-30}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  ollama_data:
+  caddy_data:
+  caddy_config:
+

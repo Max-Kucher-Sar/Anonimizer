@@ -1,0 +1,22 @@
+# Reverse proxy перед API: TLS, rate limit, лимит тела.
+# Единственная точка входа наружу — 443 (и 80 для редиректа/верификации LE).
+
+{$ANON_DOMAIN:localhost} {
+	# Ранний отказ для файлов больше лимита — до того, как запрос дойдёт до spaCy.
+	request_body {
+		max_size 25MB
+	}
+
+	# Built with github.com/mholt/caddy-ratelimit (Dockerfile.caddy).
+	# Preserve the existing default: 30 requests per minute per IP.
+	rate_limit {
+		zone per_ip {
+			key {remote_host}
+			events {$ANON_RATE_LIMIT_REQUESTS:30}
+			window 1m
+		}
+	}
+
+	# API publishes its direct HTTP port only on the host loopback interface.
+	reverse_proxy api:8000
+}

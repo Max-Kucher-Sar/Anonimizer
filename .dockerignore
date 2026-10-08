@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.env
+README.md
+README.LINUX.md
+results/
+dist/
+*.report.json
+example.*.docx
+.ruff_cache/
